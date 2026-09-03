@@ -4,7 +4,7 @@ _Living status doc. Update it at the end of every working session so the next
 session can resume without re-deriving context._
 
 **Last updated:** 2026-09-03
-**Current phase:** Scaffolding complete — compiling skeleton
+**Current phase:** End-to-end pipeline wired & building for device; awaiting live glasses (mid-update) for the first real session run.
 
 ---
 
@@ -225,6 +225,50 @@ missing key / unreachable, solve happy-path, 429-retry, missing-key throw) with 
 `URLProtocol` stub; `SolverCoordinatorTests` gains `testUnauthorizedShortCircuits`.
 
 Simulator build green; app launches and stays running.
+
+## 7e. End-to-end pipeline audit (2026-09-03)
+
+Full flow traced through the code, each seam verified:
+
+| Stage | Code | Status |
+|---|---|---|
+| Bridge capture | `GlassesCameraService.capturePhoto()` — `.registered` guard → camera-permission check (`checkPermissionStatus` → `requestPermission` / Meta AI redirect, `PermissionError` mapped) → `createSession(AutoDeviceSelector)` → `start()` → await `.started` → `addCamera(.raw/.low/24)` → `stream.start()` → await `.streaming` → `capturePhoto(.jpeg)` → first `PhotoData.data` → teardown | ✅ wired |
+| Send to Claude | `SolverCoordinator.solve()` → `handoffDelay` → `ClaudeClient.solve(imageJPEG:)` — POST `/v1/messages`, base64 image + `ProblemSolverPrompt`, 1 retry on 429/5xx | ✅ wired |
+| Parse | `SolutionParser.parse` → `Solution{problem, [SolutionStep]}` (decimal-safe split, separator handling, sign-off drop) | ✅ wired |
+| Push to glasses | `TeleprompterController` → `TeleprompterDisplay.page()` FlexBox → `GlassesDisplayService.send()` (connect: session → `addDisplay()` → await `.started`, throws on failure; `datAppOnTheGlassesUpdateRequired` handled) | ✅ wired |
+| Wristband nav | `Button(onClick:)` → `next()` / `previous()` / `repeatCurrent()` → re-send; last step → `finish()` → "done" card → `display.end()` | ✅ wired |
+| Composition | `AppModel` wires services + coordinator; `onOpenURL` → `WearablesService.handle(url:)` (filters `metaWearablesAction`) | ✅ wired |
+
+**Build:** simulator + device (`platform=iOS,id=00008120-…`) both **BUILD SUCCEEDED**.
+Team `5H2XDFYZC7`, auto profile, entitlements minimal, frameworks = Core/Camera/
+Display only. **18/18 tests pass.** App installs and (when the phone is unlocked)
+launches clean on the iPhone 15; console shows `Meta RB Display - 34790968` as a
+connected external accessory.
+
+### Platform limits to know before "live deployment"
+
+1. **Capture is triggered from the phone** ("Capture & Solve" in `RootView`). DAT
+   0.9 exposes no API for a glasses gesture / button to invoke a third-party app
+   action, so hands-free *initiation* isn't possible yet.
+2. **"Scrollable" teleprompter = pagination.** The Display DSL has no scroll
+   primitive; one step per page, wristband pinch drives Back/Next/Repeat. Matches
+   Meta's own CarMaintenance sample — this is the ceiling.
+3. **Not yet run against live glasses.** They're mid-update and registration
+   isn't `.registered` yet. Once connected + camera granted in Meta AI, the real
+   BLE session can run — code paths are covered by tests + build only until then.
+4. **`ClientToken` blank / `MetaAppID = 0`** works with Meta AI Developer Mode;
+   a non-dev-mode or TestFlight build needs real values from the Wearables
+   Developer Center.
+
+### Git history note
+
+The commit history was rewritten (badly) three times this session by
+`filter-branch` runs that clobbered every commit message and reverted the author
+email. Restored from a backup bundle each time; current state: 8 dev commits
+authored `SLHJ1208 <SLHJ1208@gmail.com>` (verified on GitHub account `slhj1208`),
+`Initial commit` by `ShrikarSwami`. To strip the `Co-Authored-By` trailers
+cleanly (instead of `filter-branch`):
+`git filter-repo --force --message-callback 'return b"\n".join(l for l in message.split(b"\n") if not l.startswith(b"Co-Authored-By:")).rstrip() + b"\n"'`
 
 ## 8. Next steps
 
