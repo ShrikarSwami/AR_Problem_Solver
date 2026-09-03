@@ -16,6 +16,39 @@ final class SolutionParserTests: XCTestCase {
         XCTAssertEqual(solution.steps.first?.text, "Subtract 4 from both sides to get 2x = 6.")
     }
 
+    func testShortCodeLinesPassThroughVerbatim() {
+        let raw = """
+        PROBLEM: Reverse a string in Python.
+        STEP 1: Define a function that returns the reversed text.
+        STEP 2: def reverse(s):
+        STEP 3: loop: return s[::-1]
+        STEP 4: Call reverse("abc") to check it prints "cba".
+        DONE
+        """
+        let solution = SolutionParser.parse(raw)
+        XCTAssertEqual(solution.steps.map(\.text), [
+            "Define a function that returns the reversed text.",
+            "def reverse(s):",
+            "loop: return s[::-1]",
+            "Call reverse(\"abc\") to check it prints \"cba\".",
+        ])
+    }
+
+    func testTerseWordProblemFragmentsAreKept() {
+        let raw = """
+        PROBLEM: Train travels 60 miles in 1.5 hours. Find speed.
+        STEP 1: distance 60 mi
+        STEP 2: time 1.5 h
+        STEP 3: 60 / 1.5
+        STEP 4: 40 mph
+        DONE
+        """
+        let solution = SolutionParser.parse(raw)
+        XCTAssertEqual(solution.steps.count, 4)
+        XCTAssertEqual(solution.steps.last?.text, "40 mph")
+        XCTAssertEqual(solution.steps[2].text, "60 / 1.5")
+    }
+
     func testHandlesNumberedListFallback() {
         let raw = """
         Here is what to do:

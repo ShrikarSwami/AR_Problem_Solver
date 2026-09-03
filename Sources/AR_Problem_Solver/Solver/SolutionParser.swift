@@ -5,8 +5,9 @@ import Foundation
 /// Falls back gracefully when the model drifts from the format.
 enum SolutionParser {
     /// Steps longer than this are soft-split so each teleprompter page fits the
-    /// glasses viewport.
-    static let maxStepCharacters = 240
+    /// glasses viewport. Matches the "under 200 characters" rule in
+    /// `ProblemSolverPrompt`; this is the safety net for when the model overruns.
+    static let maxStepCharacters = 200
 
     static func parse(_ raw: String) -> Solution {
         let lines = raw
