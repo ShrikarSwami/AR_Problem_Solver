@@ -6,7 +6,7 @@ enum ClaudeAPI {
     static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     static let version = "2023-06-01"
     static let defaultModel = "claude-sonnet-5"
-    static let maxTokens = 1024
+    static let maxTokens = 2048
 }
 
 struct ClaudeRequest: Encodable {

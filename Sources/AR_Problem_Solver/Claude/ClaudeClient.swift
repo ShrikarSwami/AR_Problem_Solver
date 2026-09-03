@@ -37,20 +37,14 @@ struct ClaudeClient: ProblemSolving {
 
         var request = URLRequest(url: ClaudeAPI.endpoint)
         request.httpMethod = "POST"
+        request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(ClaudeAPI.version, forHTTPHeaderField: "anthropic-version")
         request.httpBody = try JSONEncoder().encode(body)
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw ClaudeError.transport(error)
-        }
+        let (data, status) = try await sendWithRetry(request)
 
-        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
         guard (200..<300).contains(status) else {
             let message = (try? JSONDecoder().decode(ClaudeAPIError.self, from: data))?.error.message
                 ?? String(data: data, encoding: .utf8)
@@ -63,6 +57,28 @@ struct ClaudeClient: ProblemSolving {
         guard !text.isEmpty else { throw ClaudeError.emptyResponse }
         AppLog.claude.info("Claude reply received (\(text.count) chars, stop=\(decoded.stopReason ?? "nil"))")
         return text
+    }
+
+    /// Sends the request, retrying once on a transient status (429 / 5xx) after a
+    /// short backoff that honours `retry-after` when present.
+    private func sendWithRetry(_ request: URLRequest, attempt: Int = 0) async throws -> (Data, Int) {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw ClaudeError.transport(error)
+        }
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? -1
+
+        let transient = status == 429 || (500..<600).contains(status)
+        guard transient, attempt < 1 else { return (data, status) }
+
+        let retryAfter = http?.value(forHTTPHeaderField: "retry-after").flatMap(Double.init) ?? 1.5
+        AppLog.claude.notice("Claude \(status); retrying in \(retryAfter, format: .fixed(precision: 1))s")
+        try? await Task.sleep(for: .seconds(min(retryAfter, 10)))
+        return try await sendWithRetry(request, attempt: attempt + 1)
     }
 }
 

@@ -5,11 +5,22 @@ import MWDATDisplay
 @MainActor
 final class SolverCoordinatorTests: XCTestCase {
 
+    private func makeCoordinator(
+        camera: PhotoCapturing,
+        solver: ProblemSolving,
+        display: DisplaySending
+    ) -> SolverCoordinator {
+        let coordinator = SolverCoordinator(camera: camera, solver: solver, display: display)
+        coordinator.handoffDelay = .zero
+        coordinator.completionLinger = .zero
+        return coordinator
+    }
+
     func testHappyPathReachesPresenting() async {
         let camera = FakeCamera(result: .success(Data([0xFF, 0xD8, 0xFF])))
         let solver = FakeSolver(result: .success("PROBLEM: Test.\nSTEP 1: Do a thing.\nSTEP 2: Do another.\nDONE"))
         let display = FakeDisplay()
-        let coordinator = SolverCoordinator(camera: camera, solver: solver, display: display)
+        let coordinator = makeCoordinator(camera: camera, solver: solver, display: display)
 
         await coordinator.solve()
 
@@ -25,7 +36,7 @@ final class SolverCoordinatorTests: XCTestCase {
         let camera = FakeCamera(result: .failure(GlassesError.noDevice))
         let solver = FakeSolver(result: .success("ignored"))
         let display = FakeDisplay()
-        let coordinator = SolverCoordinator(camera: camera, solver: solver, display: display)
+        let coordinator = makeCoordinator(camera: camera, solver: solver, display: display)
 
         await coordinator.solve()
 
@@ -39,7 +50,7 @@ final class SolverCoordinatorTests: XCTestCase {
         let camera = FakeCamera(result: .success(Data([0x1])))
         let solver = FakeSolver(result: .success("PROBLEM: T.\nSTEP 1: A.\nSTEP 2: B.\nDONE"))
         let display = FakeDisplay()
-        let coordinator = SolverCoordinator(camera: camera, solver: solver, display: display)
+        let coordinator = makeCoordinator(camera: camera, solver: solver, display: display)
         await coordinator.solve()
 
         let teleprompter = try! XCTUnwrap(coordinator.teleprompter)
@@ -50,6 +61,7 @@ final class SolverCoordinatorTests: XCTestCase {
 
         await teleprompter.next() // past the end -> finish()
         XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertNil(coordinator.teleprompter)
         XCTAssertTrue(display.ended)
     }
 }

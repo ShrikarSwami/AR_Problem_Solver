@@ -9,11 +9,15 @@ import MWDATCamera
 ///
 /// Mirrors the `CameraAccess` sample's explicit-steps approach, collapsed to the
 /// one path this app needs.
+///
+/// FUTURE: this creates and destroys its own `DeviceSession` per capture. If a
+/// future revision needs camera + display live at once, hoist a single shared
+/// `DeviceSession` into `WearablesService` and add both capabilities to it.
 @MainActor
 @Observable
 final class GlassesCameraService: PhotoCapturing {
     enum Phase: Equatable {
-        case idle, startingSession, startingStream, capturing, done
+        case idle, checkingPermission, startingSession, startingStream, capturing, done
     }
 
     private(set) var phase: Phase = .idle
@@ -22,6 +26,10 @@ final class GlassesCameraService: PhotoCapturing {
     @ObservationIgnored private let tokens = ListenerTokenBag()
     @ObservationIgnored private var session: DeviceSession?
     @ObservationIgnored private var camera: MWDATCamera.Camera?
+    @ObservationIgnored private var timeoutTask: Task<Void, Never>?
+    /// Set after the first capture that hit a permission wall, so the next capture
+    /// is allowed to trigger the Meta AI redirect (`requestPermission`).
+    @ObservationIgnored private var mayRequestPermission = false
 
     /// Per-phase timeout. Generous — Bluetooth Classic setup is slow.
     var timeout: Duration = .seconds(30)
@@ -32,23 +40,35 @@ final class GlassesCameraService: PhotoCapturing {
 
     func capturePhoto() async throws -> Data {
         defer { teardown() }
-        phase = .startingSession
 
+        try await ensureCameraPermission()
+
+        phase = .startingSession
         let selector = AutoDeviceSelector(wearables: wearables)
         let session: DeviceSession
         do {
             session = try wearables.createSession(deviceSelector: selector)
         } catch {
-            throw GlassesError.sessionFailed(error.localizedDescription)
+            throw mapSessionError(error)
         }
         self.session = session
 
-        try session.start()
+        do {
+            try session.start()
+        } catch {
+            throw mapSessionError(error)
+        }
         try await waitForSessionStarted(session)
 
         phase = .startingStream
         let config = StreamConfiguration(videoCodec: .raw, resolution: .low, frameRate: 24)
-        guard let camera = try session.addCamera(config: config) else {
+        let created: MWDATCamera.Camera?
+        do {
+            created = try session.addCamera(config: config)
+        } catch {
+            throw mapSessionError(error)
+        }
+        guard let camera = created else {
             throw GlassesError.sessionFailed("Session not ready for a camera.")
         }
         self.camera = camera
@@ -56,6 +76,30 @@ final class GlassesCameraService: PhotoCapturing {
         let photoData = try await withStream(camera.stream)
         phase = .done
         return photoData
+    }
+
+    // MARK: - Permission
+
+    private func ensureCameraPermission() async throws {
+        phase = .checkingPermission
+        let status: PermissionStatus
+        do {
+            status = try await wearables.checkPermissionStatus(.camera)
+        } catch {
+            // Treat a failed status check as "unknown" — fall through to a request
+            // if we're allowed to, otherwise ask the user to retry.
+            status = .denied
+        }
+        if status == .granted { return }
+
+        guard mayRequestPermission else {
+            // First hit: don't app-switch mid-flow. Arm the redirect for next time.
+            mayRequestPermission = true
+            throw GlassesError.cameraPermissionNeeded
+        }
+
+        let requested = (try? await wearables.requestPermission(.camera)) ?? .denied
+        guard requested == .granted else { throw GlassesError.cameraPermissionDenied }
     }
 
     // MARK: - Lifecycle waits
@@ -98,8 +142,9 @@ final class GlassesCameraService: PhotoCapturing {
 
             stream.start()
 
-            Task { @MainActor in
+            timeoutTask = Task { @MainActor in
                 try? await Task.sleep(for: self.timeout)
+                guard !Task.isCancelled else { return }
                 box.fail(GlassesError.timedOut("a photo from the glasses"))
             }
         }
@@ -117,7 +162,18 @@ final class GlassesCameraService: PhotoCapturing {
         }
     }
 
+    private func mapSessionError(_ error: DeviceSessionError) -> GlassesError {
+        switch error {
+        case .noEligibleDevice:
+            return .noDevice
+        default:
+            return .sessionFailed(error.localizedDescription)
+        }
+    }
+
     private func teardown() {
+        timeoutTask?.cancel()
+        timeoutTask = nil
         tokens.clear()
         camera?.stop()
         camera = nil

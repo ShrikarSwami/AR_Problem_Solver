@@ -11,7 +11,7 @@ final class TeleprompterController {
     private(set) var index: Int = 0
 
     private let sender: DisplaySending
-    var onFinished: (() -> Void)?
+    var onFinished: (@MainActor () async -> Void)?
 
     var currentStep: SolutionStep? {
         solution.steps.indices.contains(index) ? solution.steps[index] : nil
@@ -30,7 +30,7 @@ final class TeleprompterController {
 
     func next() async {
         if index >= solution.steps.count - 1 {
-            onFinished?()
+            await onFinished?()
             return
         }
         index += 1

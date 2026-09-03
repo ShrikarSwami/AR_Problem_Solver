@@ -34,6 +34,45 @@ final class SolutionParserTests: XCTestCase {
         XCTAssertFalse(solution.isEmpty)
     }
 
+    func testDecimalsAreNotSplitAcrossPages() {
+        let long = "First measure the resistance carefully with a calibrated meter and note the reading. "
+            + "The circuit should read exactly 3.14 ohms when the probes are seated firmly on the terminals "
+            + "and the leads are not touching anything else in the enclosure at all right now."
+        let raw = "PROBLEM: Check the resistor.\nSTEP 1: \(long)\nDONE"
+        let solution = SolutionParser.parse(raw)
+        XCTAssertGreaterThan(solution.steps.count, 1)
+        XCTAssertFalse(solution.steps.contains { $0.text.hasSuffix("3.") || $0.text.hasPrefix("14 ") })
+        XCTAssertTrue(solution.steps.contains { $0.text.contains("3.14 ohms") })
+    }
+
+    func testDashAndParenSeparators() {
+        let raw = """
+        PROBLEM: Reset the router.
+        STEP 1 - Unplug the power cable.
+        2) Wait thirty seconds.
+        STEP 3: Plug it back in and wait for the lights.
+        DONE
+        """
+        let solution = SolutionParser.parse(raw)
+        XCTAssertEqual(solution.steps.map(\.text), [
+            "Unplug the power cable.",
+            "Wait thirty seconds.",
+            "Plug it back in and wait for the lights.",
+        ])
+    }
+
+    func testTrailingSignOffIsDropped() {
+        let raw = """
+        PROBLEM: Tighten the bolt.
+        STEP 1: Turn the bolt clockwise until it is snug.
+        DONE
+        Good luck, you've got this!
+        """
+        let solution = SolutionParser.parse(raw)
+        XCTAssertEqual(solution.steps.count, 1)
+        XCTAssertEqual(solution.steps[0].text, "Turn the bolt clockwise until it is snug.")
+    }
+
     func testLongStepIsSoftSplit() {
         let sentence = String(repeating: "This is a fairly long clause that keeps going. ", count: 10)
         let raw = "PROBLEM: Long one.\nSTEP 1: \(sentence)\nDONE"

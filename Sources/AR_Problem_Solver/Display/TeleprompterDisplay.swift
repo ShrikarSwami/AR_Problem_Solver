@@ -4,7 +4,7 @@ import MWDATDisplay
 /// exactly one root `FlexBox` (the DAT contract: one root layout per send).
 ///
 /// DAT 0.9 has no scrolling primitive, so "teleprompter" == one step per page,
-/// advanced with the Neural Wristband via the `Previous` / `Next` buttons.
+/// advanced with the Neural Wristband via the `Back` / `Next` buttons.
 enum TeleprompterDisplay {
 
     /// A single solution step.
@@ -21,7 +21,10 @@ enum TeleprompterDisplay {
 
         return FlexBox(direction: .column, spacing: 12) {
             FlexBox(direction: .column, spacing: 4) {
-                Text(problem, style: .meta, color: .secondary)
+                // The problem statement is only worth screen space on the first page.
+                if isFirst {
+                    Text(problem, style: .meta, color: .secondary)
+                }
                 Text("Step \(step.number) of \(count)", style: .meta, color: .secondary)
                 Text(step.text, style: .body)
             }
@@ -30,19 +33,21 @@ enum TeleprompterDisplay {
 
             FlexBox(direction: .row, spacing: 8, alignment: .center, crossAlignment: .center) {
                 ButtonGroup {
-                    Button(
-                        label: isFirst ? "Restart" : "Back",
-                        style: .primary,
-                        iconName: .triangleLeftVerticalLine,
-                        onClick: onPrevious
-                    )
+                    if !isFirst {
+                        Button(
+                            label: "Back",
+                            style: .secondary,
+                            iconName: .triangleLeftVerticalLine,
+                            onClick: onPrevious
+                        )
+                    }
+                    Button(label: "Repeat", style: .secondary, iconName: .twoArrowsClockwise, onClick: onRepeat)
                     Button(
                         label: isLast ? "Done" : "Next",
                         style: .primary,
                         iconName: isLast ? .checkmark : .triangleRightVerticalLine,
                         onClick: onNext
                     )
-                    Button(label: "Repeat", style: .secondary, onClick: onRepeat)
                 }
             }
         }
@@ -53,6 +58,16 @@ enum TeleprompterDisplay {
         FlexBox(direction: .column, spacing: 8) {
             Text("Working on it…", style: .heading)
             Text(problem, style: .body, color: .secondary)
+        }
+        .padding(24)
+        .background(.card)
+    }
+
+    /// Shown briefly after the wearer taps "Done" on the last step.
+    static func completed() -> FlexBox {
+        FlexBox(direction: .column, spacing: 8) {
+            Text("All steps done", style: .heading)
+            Text("Take off the glasses or capture another problem.", style: .body, color: .secondary)
         }
         .padding(24)
         .background(.card)

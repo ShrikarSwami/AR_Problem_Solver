@@ -138,6 +138,28 @@ xcodebuild -scheme AR_Problem_Solver -destination 'generic/platform=iOS Simulato
   + `HotspotConfiguration` entitlements (paid account) — not added yet; basic
   install/launch does not require them.
 
+## 7b. Integration refinements (2026-09-03)
+
+- **Step parser** — decimals (`3.14`) and abbreviations no longer split across
+  pages; `STEP n -`/`n)`/`n.` separators all handled; trailing punctuation kept;
+  stray sign-off lines after the last step are dropped; empty steps filtered.
+  Prompt now asks for 3–8 single-line steps with numbers/units kept inline.
+- **Camera permission** — `GlassesCameraService` checks
+  `checkPermissionStatus(.camera)` first; a first miss returns
+  `GlassesError.cameraPermissionNeeded` (no mid-flow app-switch), the next
+  Capture triggers `requestPermission(.camera)` (Meta AI redirect).
+- **Camera → display handoff** — camera `DeviceSession` fully torn down inside
+  `capturePhoto()`; `SolverCoordinator` then waits `handoffDelay` (600 ms) before
+  the display session opens; the display session is created once (thinking card)
+  and reused for every teleprompter page. Coordinator now guards on
+  `isDeviceReady` (registration) before starting.
+- **Claude client** — `max_tokens` 2048; one bounded retry on 429/5xx honouring
+  `retry-after`; explicit 60 s request timeout.
+- **Teleprompter** — problem statement shown on step 1 only; no Back button on
+  step 1; Repeat button added; brief "all steps done" card before the session
+  closes (`completionLinger`).
+- 10/10 unit tests pass; simulator build green.
+
 ## 8. Next steps
 
 - [ ] Add a DEBUG-only MockDeviceKit toggle in Settings to exercise the camera

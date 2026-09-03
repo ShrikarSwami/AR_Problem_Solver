@@ -23,7 +23,10 @@ enum ProblemSolverPrompt {
     - Then output steps, each starting on its own line as `STEP <n>: <text>`, \
       numbered from 1 with no gaps.
     - Keep each step under 240 characters. If an idea needs more, split it into \
-      multiple steps.
+      multiple steps. Aim for 3–8 steps total.
+    - Write each step as a single line — no line breaks inside a step.
+    - Keep numbers, decimals, and units together on one line (write "x = 3.14 m", \
+      never break "3.14" across a line or sentence).
     - After the final step, output a single line: `DONE`.
     - No preamble, no closing remarks, no markdown headings, no bullet lists.
 

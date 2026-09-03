@@ -24,6 +24,8 @@ protocol DisplaySending: AnyObject {
 
 enum GlassesError: LocalizedError {
     case noDevice
+    case cameraPermissionNeeded
+    case cameraPermissionDenied
     case sessionFailed(String)
     case captureFailed(String)
     case timedOut(String)
@@ -32,6 +34,10 @@ enum GlassesError: LocalizedError {
         switch self {
         case .noDevice:
             return "No Meta glasses available. Put them on and pair in the Meta AI app."
+        case .cameraPermissionNeeded:
+            return "Camera access for the glasses needs to be granted in the Meta AI app. Tap Capture again to open it."
+        case .cameraPermissionDenied:
+            return "Camera access was denied. Enable it for this app in the Meta AI app, then try again."
         case .sessionFailed(let detail):
             return "Couldn't start a glasses session: \(detail)"
         case .captureFailed(let detail):

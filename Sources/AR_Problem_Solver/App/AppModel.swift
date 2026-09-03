@@ -27,7 +27,8 @@ final class AppModel {
         self.coordinator = SolverCoordinator(
             camera: camera,
             solver: ClaudeClient(),
-            display: display
+            display: display,
+            isDeviceReady: { [weak wearables] in wearables?.isRegistered ?? false }
         )
     }
 
