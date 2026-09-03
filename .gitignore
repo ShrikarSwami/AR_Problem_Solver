@@ -1,0 +1,20 @@
+# Secrets
+Secrets.xcconfig
+
+# XcodeGen output
+*.xcodeproj
+
+# Xcode / SPM
+.DS_Store
+xcuserdata/
+*.xcworkspace/xcshareddata/swiftpm/configuration
+DerivedData/
+.build/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Scratch
+/scratch/

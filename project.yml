@@ -1,0 +1,73 @@
+name: AR_Problem_Solver
+
+options:
+  bundleIdPrefix: com.shrikar
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  MetaWearablesDAT:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    exactVersion: 0.9.0
+
+configs:
+  Debug: debug
+  Release: release
+
+targets:
+  AR_Problem_Solver:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/AR_Problem_Solver
+      - path: Resources
+    configFiles:
+      Debug: Secrets.xcconfig
+      Release: Secrets.xcconfig
+    dependencies:
+      - package: MetaWearablesDAT
+        product: MWDATCore
+      - package: MetaWearablesDAT
+        product: MWDATCamera
+      - package: MetaWearablesDAT
+        product: MWDATDisplay
+      - package: MetaWearablesDAT
+        product: MWDATMockDevice
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shrikar.AR-Problem-Solver
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        # Fed by Secrets.xcconfig; safe empty defaults so the project always generates.
+        META_APP_ID: $(META_APP_ID)
+        CLIENT_TOKEN: $(CLIENT_TOKEN)
+        APP_URL_SCHEME: arproblemsolver
+
+  AR_Problem_SolverTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/AR_Problem_SolverTests
+    dependencies:
+      - target: AR_Problem_Solver
+      - package: MetaWearablesDAT
+        product: MWDATMockDevice
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shrikar.AR-Problem-SolverTests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  AR_Problem_Solver:
+    build:
+      targets:
+        AR_Problem_Solver: all
+        AR_Problem_SolverTests: [test]
+    test:
+      targets:
+        - AR_Problem_SolverTests
