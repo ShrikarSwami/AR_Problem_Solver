@@ -10,6 +10,7 @@ xcuserdata/
 *.xcworkspace/xcshareddata/swiftpm/configuration
 DerivedData/
 .build/
+/build/
 *.moved-aside
 *.hmap
 *.ipa
