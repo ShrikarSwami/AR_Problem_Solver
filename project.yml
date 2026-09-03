@@ -43,6 +43,8 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        CODE_SIGN_STYLE: Automatic
         # Fed by Secrets.xcconfig; safe empty defaults so the project always generates.
         META_APP_ID: $(META_APP_ID)
         CLIENT_TOKEN: $(CLIENT_TOKEN)

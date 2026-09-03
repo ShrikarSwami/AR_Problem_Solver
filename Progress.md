@@ -121,6 +121,23 @@ xcodebuild -scheme AR_Problem_Solver -destination 'generic/platform=iOS Simulato
 4. Run on a physical iPhone (BLE + external accessory — not the simulator).
 5. In-app: Connect glasses → Capture & Solve → navigate steps with the wristband.
 
+## 7a. On-device deploy status (2026-09-03)
+
+- Pushed to `github.com/ShrikarSwami/AR_Problem_Solver` `main`.
+- Device `ShriShriiPhone` (iPhone 15, iOS 26.6.1, id `00008120-000A48E43ED1A01E`):
+  connected over USB, paired, **Developer Mode enabled**.
+- Signing cert present in keychain: `Apple Development: shrikarswami08@gmail.com
+  (977QXZMRTZ)`. `DEVELOPMENT_TEAM = 977QXZMRTZ` set in `Secrets.xcconfig`;
+  `CODE_SIGN_STYLE = Automatic` in `project.yml`.
+- **Blocker:** device build fails with `No Account for Team "977QXZMRTZ"` —
+  Xcode has no signed-in Apple ID, so `-allowProvisioningUpdates` can't mint a
+  profile. Fix: Xcode ▸ Settings ▸ Accounts ▸ add `shrikarswami08@gmail.com`.
+  Then: `xcodebuild -scheme AR_Problem_Solver -destination 'platform=iOS,id=00008120-000A48E43ED1A01E' -allowProvisioningUpdates build`
+  then `xcrun devicectl device install app <path>.app` + `devicectl device process launch`.
+- Camera streaming may additionally need `com.apple.developer.networking.wifi-info`
+  + `HotspotConfiguration` entitlements (paid account) — not added yet; basic
+  install/launch does not require them.
+
 ## 8. Next steps
 
 - [ ] Add a DEBUG-only MockDeviceKit toggle in Settings to exercise the camera
