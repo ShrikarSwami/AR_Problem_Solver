@@ -80,6 +80,8 @@ final class GlassesDisplayService: DisplaySending {
         guard wearables.registrationState == .registered else { throw GlassesError.notAuthorized }
         end() // clear any half-open state
 
+        try await waitForActiveDevice()
+
         let session: DeviceSession
         do {
             session = try wearables.createSession(deviceSelector: deviceSelector)
@@ -153,6 +155,24 @@ final class GlassesDisplayService: DisplaySending {
             display.start()
             try await displayReady.value
         }
+    }
+
+    /// Blocks until the display-capable auto-selector reports a device, or throws
+    /// `.notConnected` after 12 s. Avoids racing device discovery.
+    private func waitForActiveDevice() async throws {
+        if deviceSelector.activeDevice != nil { return }
+        try? await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { [deviceSelector] in
+                for await id in deviceSelector.activeDeviceStream() where id != nil { return }
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(12))
+                throw GlassesError.notConnected
+            }
+            defer { group.cancelAll() }
+            try await group.next()
+        }
+        guard deviceSelector.activeDevice != nil else { throw GlassesError.notConnected }
     }
 
     // MARK: - Registration observer

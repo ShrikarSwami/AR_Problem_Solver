@@ -22,20 +22,43 @@ final class GlassesCameraService: PhotoCapturing {
 
     private(set) var phase: Phase = .idle
 
+    /// Whether the auto-selector currently has an eligible device. Kept live from
+    /// `init` so a capture doesn't race device discovery.
+    private(set) var hasActiveDevice: Bool = false
+
     private let wearables: WearablesInterface
+    /// One long-lived selector — created once (like the CameraAccess sample), so
+    /// `activeDeviceStream()` has had time to discover the glasses before the
+    /// user taps Capture.
+    @ObservationIgnored private let deviceSelector: AutoDeviceSelector
     @ObservationIgnored private let tokens = ListenerTokenBag()
     @ObservationIgnored private var session: DeviceSession?
     @ObservationIgnored private var camera: MWDATCamera.Camera?
     @ObservationIgnored private var timeoutTask: Task<Void, Never>?
+    @ObservationIgnored private var deviceMonitorTask: Task<Void, Never>?
     /// Set after the first capture that hit a permission wall, so the next capture
     /// is allowed to trigger the Meta AI redirect (`requestPermission`).
     @ObservationIgnored private var mayRequestPermission = false
 
     /// Per-phase timeout. Generous — Bluetooth Classic setup is slow.
     var timeout: Duration = .seconds(30)
+    /// How long to wait for the auto-selector to surface a device before failing.
+    var deviceWait: Duration = .seconds(12)
 
     init(wearables: WearablesInterface) {
         self.wearables = wearables
+        self.deviceSelector = AutoDeviceSelector(wearables: wearables)
+        self.hasActiveDevice = deviceSelector.activeDevice != nil
+        deviceMonitorTask = Task { [weak self] in
+            guard let selector = self?.deviceSelector else { return }
+            for await id in selector.activeDeviceStream() {
+                self?.hasActiveDevice = id != nil
+            }
+        }
+    }
+
+    deinit {
+        deviceMonitorTask?.cancel()
     }
 
     func capturePhoto() async throws -> Data {
@@ -45,13 +68,16 @@ final class GlassesCameraService: PhotoCapturing {
             throw GlassesError.notAuthorized
         }
 
+        // Wait for a device before anything else — a permission check or
+        // createSession that races discovery both surface as "no device".
+        phase = .startingSession
+        try await waitForActiveDevice()
+
         try await ensureCameraPermission()
 
-        phase = .startingSession
-        let selector = AutoDeviceSelector(wearables: wearables)
         let session: DeviceSession
         do {
-            session = try wearables.createSession(deviceSelector: selector)
+            session = try wearables.createSession(deviceSelector: deviceSelector)
         } catch {
             throw mapSessionError(error)
         }
@@ -126,6 +152,29 @@ final class GlassesCameraService: PhotoCapturing {
     }
 
     // MARK: - Lifecycle waits
+
+    /// Blocks until the auto-selector reports an eligible device, or throws
+    /// `.notConnected` after `deviceWait`. Prevents `createSession` from racing
+    /// device discovery right after launch (which surfaces as `noEligibleDevice`).
+    private func waitForActiveDevice() async throws {
+        if deviceSelector.activeDevice != nil { return }
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { [deviceSelector] in
+                    for await id in deviceSelector.activeDeviceStream() where id != nil { return }
+                }
+                group.addTask { [deviceWait] in
+                    try await Task.sleep(for: deviceWait)
+                    throw GlassesError.notConnected
+                }
+                defer { group.cancelAll() }
+                try await group.next()
+            }
+        } catch is CancellationError {
+            // fine
+        }
+        guard deviceSelector.activeDevice != nil else { throw GlassesError.notConnected }
+    }
 
     private func waitForSessionStarted(_ session: DeviceSession) async throws {
         try await withTimeout(phase: "the glasses session") {
