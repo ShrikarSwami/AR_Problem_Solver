@@ -45,22 +45,29 @@ struct RootView: View {
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(
-                model.wearables.isRegistered ? "Glasses connected" : "Glasses not connected",
-                systemImage: model.wearables.isRegistered ? "eyeglasses" : "eyeglasses.slash"
+                model.wearables.connectionSummary,
+                systemImage: model.wearables.isAuthorized ? "eyeglasses" : "eyeglasses.slash"
             )
-            .foregroundStyle(model.wearables.isRegistered ? .green : .secondary)
-
-            if !model.wearables.deviceNames.isEmpty {
-                Text(model.wearables.deviceNames.joined(separator: ", "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .foregroundStyle(model.wearables.isAuthorized ? .green : .secondary)
 
             Label(
                 model.hasAPIKey ? "Claude API key set" : "No Claude API key",
                 systemImage: model.hasAPIKey ? "key.fill" : "key.slash"
             )
             .foregroundStyle(model.hasAPIKey ? .green : .orange)
+
+            if model.wearables.requiresGlassesAppUpdate || model.wearables.requiresFirmwareUpdate {
+                Button("Open Meta AI to update") {
+                    Task {
+                        if model.wearables.requiresGlassesAppUpdate {
+                            await model.wearables.openGlassesAppUpdate()
+                        } else {
+                            await model.wearables.openFirmwareUpdate()
+                        }
+                    }
+                }
+                .font(.caption)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -82,7 +89,7 @@ struct RootView: View {
             .padding()
         }
         .buttonStyle(.borderedProminent)
-        .disabled(state.isBusy || !model.wearables.isRegistered)
+        .disabled(state.isBusy || !model.wearables.isAuthorized)
     }
 
     private func buttonTitle(for state: SolverCoordinator.State) -> String {

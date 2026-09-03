@@ -41,6 +41,10 @@ final class GlassesCameraService: PhotoCapturing {
     func capturePhoto() async throws -> Data {
         defer { teardown() }
 
+        guard wearables.registrationState == .registered else {
+            throw GlassesError.notAuthorized
+        }
+
         try await ensureCameraPermission()
 
         phase = .startingSession
@@ -82,15 +86,11 @@ final class GlassesCameraService: PhotoCapturing {
 
     private func ensureCameraPermission() async throws {
         phase = .checkingPermission
-        let status: PermissionStatus
         do {
-            status = try await wearables.checkPermissionStatus(.camera)
+            if try await wearables.checkPermissionStatus(.camera) == .granted { return }
         } catch {
-            // Treat a failed status check as "unknown" — fall through to a request
-            // if we're allowed to, otherwise ask the user to retry.
-            status = .denied
+            throw Self.mapPermission(error)
         }
-        if status == .granted { return }
 
         guard mayRequestPermission else {
             // First hit: don't app-switch mid-flow. Arm the redirect for next time.
@@ -98,8 +98,31 @@ final class GlassesCameraService: PhotoCapturing {
             throw GlassesError.cameraPermissionNeeded
         }
 
-        let requested = (try? await wearables.requestPermission(.camera)) ?? .denied
-        guard requested == .granted else { throw GlassesError.cameraPermissionDenied }
+        // Opens the Meta AI app and resumes when the user returns.
+        do {
+            let result = try await wearables.requestPermission(.camera)
+            guard result == .granted else { throw GlassesError.cameraPermissionDenied }
+        } catch {
+            throw Self.mapPermission(error)
+        }
+    }
+
+    /// Maps a DAT `PermissionError` (or a `GlassesError` thrown from the guard)
+    /// to a specific `GlassesError`.
+    private static func mapPermission(_ error: any Error) -> GlassesError {
+        if let already = error as? GlassesError { return already }
+        guard let permission = error as? PermissionError else {
+            return .sessionFailed(error.localizedDescription)
+        }
+        switch permission {
+        case .metaAINotInstalled: return .metaAINotInstalled
+        case .noDevice, .noDeviceWithConnection: return .notConnected
+        case .requestInProgress: return .permissionRequestInProgress
+        case .requestTimeout: return .timedOut("the Meta AI permission prompt")
+        case .connectionError: return .sessionFailed("Lost the connection to the glasses.")
+        case .internalError: return .sessionFailed(permission.errorDescription ?? "Permission check failed.")
+        @unknown default: return .cameraPermissionDenied
+        }
     }
 
     // MARK: - Lifecycle waits
@@ -165,9 +188,17 @@ final class GlassesCameraService: PhotoCapturing {
     private func mapSessionError(_ error: DeviceSessionError) -> GlassesError {
         switch error {
         case .noEligibleDevice:
-            return .noDevice
+            return .notConnected
+        case .datAppOnTheGlassesUpdateRequired:
+            return .glassesAppUpdateRequired
+        case .capabilityAlreadyActive, .sessionAlreadyExists:
+            return .sessionFailed("A glasses session is already open. Try again in a moment.")
+        case .thermalCritical, .thermalEmergency:
+            return .sessionFailed("The glasses are too warm. Let them cool down and try again.")
+        case .batteryCritical, .peakPowerShutdown:
+            return .sessionFailed("The glasses battery is too low.")
         default:
-            return .sessionFailed(error.localizedDescription)
+            return .sessionFailed(error.errorDescription ?? "The glasses session failed.")
         }
     }
 

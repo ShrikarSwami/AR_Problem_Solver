@@ -59,6 +59,38 @@ struct ClaudeClient: ProblemSolving {
         return text
     }
 
+    /// Verifies the API key and network path with a `GET /v1/models` call, which
+    /// Anthropic does not bill as token usage. Never throws — returns a
+    /// `ClaudeConnection` describing what happened.
+    func checkConnection() async -> ClaudeConnection {
+        guard let apiKey = apiKeyProvider(), !apiKey.isEmpty else { return .missingKey }
+
+        var request = URLRequest(url: ClaudeAPI.modelsEndpoint)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(ClaudeAPI.version, forHTTPHeaderField: "anthropic-version")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            return .unreachable(error.localizedDescription)
+        }
+
+        switch (response as? HTTPURLResponse)?.statusCode ?? -1 {
+        case 200:
+            let count = (try? JSONDecoder().decode(ClaudeModelsResponse.self, from: data))?.data.count ?? 0
+            AppLog.claude.info("Claude connection OK (\(count) models)")
+            return .ok(models: count)
+        case 401, 403:
+            return .unauthorized
+        case let other:
+            return .unexpected(status: other)
+        }
+    }
+
     /// Sends the request, retrying once on a transient status (429 / 5xx) after a
     /// short backoff that honours `retry-after` when present.
     private func sendWithRetry(_ request: URLRequest, attempt: Int = 0) async throws -> (Data, Int) {

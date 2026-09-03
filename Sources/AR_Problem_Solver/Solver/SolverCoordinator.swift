@@ -48,7 +48,7 @@ final class SolverCoordinator {
     func solve() async {
         guard !state.isBusy else { return }
         guard isDeviceReady() else {
-            state = .failed(GlassesError.noDevice.localizedDescription)
+            state = .failed(GlassesError.notAuthorized.localizedDescription)
             return
         }
         teleprompter = nil

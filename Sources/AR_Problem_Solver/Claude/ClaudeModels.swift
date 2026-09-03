@@ -4,9 +4,36 @@ import Foundation
 /// Only the subset this app needs is modeled.
 enum ClaudeAPI {
     static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+    static let modelsEndpoint = URL(string: "https://api.anthropic.com/v1/models")!
     static let version = "2023-06-01"
     static let defaultModel = "claude-sonnet-5"
     static let maxTokens = 2048
+}
+
+/// Result of a lightweight connectivity check (`GET /v1/models` — not billed).
+enum ClaudeConnection: Equatable {
+    case ok(models: Int)
+    case missingKey
+    case unauthorized
+    case unreachable(String)
+    case unexpected(status: Int)
+
+    var isOK: Bool { if case .ok = self { return true } else { return false } }
+
+    var summary: String {
+        switch self {
+        case .ok(let count): return "Connected — \(count) models available"
+        case .missingKey: return "No API key set"
+        case .unauthorized: return "Key rejected (401) — check the value"
+        case .unreachable(let why): return "Couldn't reach Anthropic: \(why)"
+        case .unexpected(let status): return "Unexpected response (\(status))"
+        }
+    }
+}
+
+struct ClaudeModelsResponse: Decodable {
+    struct Model: Decodable { let id: String }
+    let data: [Model]
 }
 
 struct ClaudeRequest: Encodable {

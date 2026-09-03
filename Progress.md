@@ -178,6 +178,54 @@ tests still pass. When MockDeviceKit tests are added, link
 `MWDATMockDeviceTestClient` (the test-safe product) on a dedicated test target
 only.
 
+## 7d. DAT connection-state review + API-key hardening (2026-09-03)
+
+**Registration-state bug (headline):** `WearablesService.isRegistered` compared
+against `.available`. The DAT samples are unambiguous — `.registered` is the
+authorized state; `.available` only means glasses are reachable but this app
+hasn't completed the Meta AI handshake. Renamed to `isAuthorized == .registered`.
+This propagated to `RootView` (button gate), `SettingsView`, and the coordinator's
+`isDeviceReady`.
+
+**Connection / authorization troubleshooting:**
+- `GlassesError` now has typed cases: `notAuthorized`, `notConnected`,
+  `metaAINotInstalled`, `glassesAppUpdateRequired`, `firmwareUpdateRequired`,
+  `cameraPermissionNeeded/Denied`, `permissionRequestInProgress`, each with a
+  user message and an optional `recovery` (connect / open update in Meta AI).
+- `GlassesCameraService.ensureCameraPermission` maps DAT `PermissionError`
+  (`.metaAINotInstalled`, `.noDevice`, `.requestInProgress`, `.requestTimeout`,
+  `.connectionError`) to those cases instead of a blanket "denied".
+- `GlassesDisplayService` rewritten: `send()` now **connects and throws** on
+  failure (was fire-and-forget queue → silent no-op); maps
+  `DeviceSessionError.datAppOnTheGlassesUpdateRequired` →
+  `glassesAppUpdateRequired` + a callback that sets
+  `WearablesService.requiresGlassesAppUpdate`; observes registration and tears
+  the session down when authorization drops (mirrors the DisplayAccess sample).
+- `WearablesService` watches `Compatibility` per device → `requiresFirmwareUpdate`;
+  exposes `openFirmwareUpdate()` / `openGlassesAppUpdate()`; `handle(url:)` now
+  filters for the `metaWearablesAction` query item (sample pattern) and surfaces
+  `handleUrl` errors.
+- `SettingsView` shows `connectionSummary`, connect/disconnect, and
+  "Update in Meta AI" buttons when an update is required.
+
+**API key:**
+- `Secrets.xcconfig` is gitignored (verified `git check-ignore`); only
+  `Secrets.xcconfig.example` is tracked.
+- `ANTHROPIC_API_KEY[config=Release] =` — the build-time key is Debug-only; a
+  Release build never carries it.
+- Recommended path: enter the key in Settings → device Keychain (priority over
+  the xcconfig value).
+- `ClaudeClient.checkConnection()` → `GET /v1/models` (not token-billed) returns
+  `ClaudeConnection` (`.ok(models:)` / `.unauthorized` / `.missingKey` /
+  `.unreachable` / `.unexpected`). Surfaced as "Test Claude connection" in
+  Settings.
+
+**Tests:** 18/18 pass — added `ClaudeClientTests` (7: connection OK / 401 /
+missing key / unreachable, solve happy-path, 429-retry, missing-key throw) with a
+`URLProtocol` stub; `SolverCoordinatorTests` gains `testUnauthorizedShortCircuits`.
+
+Simulator build green; app launches and stays running.
+
 ## 8. Next steps
 
 - [ ] Add a DEBUG-only MockDeviceKit toggle in Settings to exercise the camera

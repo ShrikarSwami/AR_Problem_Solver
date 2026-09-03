@@ -33,7 +33,7 @@ final class SolverCoordinatorTests: XCTestCase {
     }
 
     func testCaptureFailureSurfacesError() async {
-        let camera = FakeCamera(result: .failure(GlassesError.noDevice))
+        let camera = FakeCamera(result: .failure(GlassesError.notConnected))
         let solver = FakeSolver(result: .success("ignored"))
         let display = FakeDisplay()
         let coordinator = makeCoordinator(camera: camera, solver: solver, display: display)
@@ -43,7 +43,25 @@ final class SolverCoordinatorTests: XCTestCase {
         guard case .failed(let message) = coordinator.state else {
             return XCTFail("expected .failed, got \(coordinator.state)")
         }
-        XCTAssertTrue(message.contains("No Meta glasses"))
+        XCTAssertEqual(message, GlassesError.notConnected.errorDescription)
+    }
+
+    func testUnauthorizedShortCircuits() async {
+        let camera = FakeCamera(result: .success(Data([0x1])))
+        let solver = FakeSolver(result: .success("PROBLEM: x\nSTEP 1: y\nDONE"))
+        let display = FakeDisplay()
+        let coordinator = SolverCoordinator(
+            camera: camera, solver: solver, display: display,
+            isDeviceReady: { false }
+        )
+
+        await coordinator.solve()
+
+        guard case .failed(let message) = coordinator.state else {
+            return XCTFail("expected .failed, got \(coordinator.state)")
+        }
+        XCTAssertEqual(message, GlassesError.notAuthorized.errorDescription)
+        XCTAssertTrue(display.sentPages.isEmpty)
     }
 
     func testTeleprompterAdvancesAndFinishes() async {

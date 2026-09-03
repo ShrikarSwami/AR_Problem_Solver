@@ -16,10 +16,18 @@ final class AppModel {
         KeychainStore.readAPIKey() != nil || !Secrets.anthropicAPIKey.isEmpty
     }
 
+    /// Lightweight, unbilled check that the key + network reach Anthropic.
+    func checkClaudeConnection() async -> ClaudeConnection {
+        await ClaudeClient().checkConnection()
+    }
+
     init() {
         let wearables = WearablesService.makeConfigured()
         let camera = GlassesCameraService(wearables: wearables.wearables)
         let display = GlassesDisplayService(wearables: wearables.wearables)
+        display.onGlassesAppUpdateRequired = { [weak wearables] in
+            wearables?.noteGlassesAppUpdateRequired()
+        }
 
         self.wearables = wearables
         self.camera = camera
@@ -28,7 +36,7 @@ final class AppModel {
             camera: camera,
             solver: ClaudeClient(),
             display: display,
-            isDeviceReady: { [weak wearables] in wearables?.isRegistered ?? false }
+            isDeviceReady: { [weak wearables] in wearables?.isAuthorized ?? false }
         )
     }
 
