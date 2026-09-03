@@ -77,10 +77,14 @@ final class SolverCoordinatorTests: XCTestCase {
         await teleprompter.next()
         XCTAssertEqual(teleprompter.index, 1)
 
+        var idleFired = false
+        coordinator.onIdle = { idleFired = true }
+
         await teleprompter.next() // past the end -> finish()
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertNil(coordinator.teleprompter)
         XCTAssertTrue(display.ended)
+        XCTAssertTrue(idleFired, "onIdle should fire so the app can re-send the glasses home screen")
     }
 }
 

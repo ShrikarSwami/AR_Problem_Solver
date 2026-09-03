@@ -3,12 +3,14 @@ import Observation
 import MWDATCore
 import MWDATCamera
 
-/// Drives the DAT camera lifecycle for a single still capture:
-/// create session → start → add camera → start stream → wait for frames →
-/// `capturePhoto(.jpeg)` → first `PhotoData` → tear everything down.
+/// Quick-snap still capture over the DAT camera.
 ///
-/// Mirrors the `CameraAccess` sample's explicit-steps approach, collapsed to the
-/// one path this app needs.
+/// DAT 0.9 has no stream-less photo API — `Stream.capturePhoto(_:)` requires an
+/// active `Stream`. So this opens a stream at the lowest frame rate, fires
+/// `capturePhoto` the instant it reaches `.streaming`, and **stops the camera in
+/// the same callback that delivers the photo** — the privacy light is on only
+/// for the ~1 s between "streaming" and "photo captured", never for the Claude
+/// call or teardown.
 ///
 /// FUTURE: this creates and destroys its own `DeviceSession` per capture. If a
 /// future revision needs camera + display live at once, hoist a single shared
@@ -91,7 +93,9 @@ final class GlassesCameraService: PhotoCapturing {
         try await waitForSessionStarted(session)
 
         phase = .startingStream
-        let config = StreamConfiguration(videoCodec: .raw, resolution: .low, frameRate: 24)
+        // Lowest frame rate — a snap needs no continuous frames, and less
+        // Bluetooth traffic means a faster path to `.streaming` and the shutter.
+        let config = StreamConfiguration(videoCodec: .raw, resolution: .low, frameRate: 2)
         let created: MWDATCamera.Camera?
         do {
             created = try session.addCamera(config: config)
@@ -103,8 +107,9 @@ final class GlassesCameraService: PhotoCapturing {
         }
         self.camera = camera
 
-        let photoData = try await withStream(camera.stream)
+        let photoData = try await withStream(on: camera)
         phase = .done
+        AppLog.camera.info("Snapped \(photoData.count) bytes; camera stopped")
         return photoData
     }
 
@@ -186,30 +191,42 @@ final class GlassesCameraService: PhotoCapturing {
         }
     }
 
-    /// Starts the stream, waits for the first photo, returns its JPEG bytes.
-    private func withStream(_ stream: MWDATCamera.Stream) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+    /// Starts the stream, fires the shutter on `.streaming`, and stops the camera
+    /// the instant the photo arrives (or on any failure) so the privacy light is
+    /// lit for the shortest possible window.
+    private func withStream(on camera: MWDATCamera.Camera) async throws -> Data {
+        let stream = camera.stream
+        return try await withCheckedThrowingContinuation { continuation in
             let box = ResumeOnce(continuation)
+
+            // Cuts the camera immediately, then resumes the caller.
+            let finish: @Sendable (Result<Data, Error>) -> Void = { result in
+                camera.stop()
+                switch result {
+                case .success(let data): box.succeed(data)
+                case .failure(let error): box.fail(error)
+                }
+            }
 
             stream.statePublisher.listen { state in
                 if state == .streaming {
                     Task { @MainActor in
                         self.phase = .capturing
                         if !stream.capturePhoto(format: .jpeg) {
-                            box.fail(GlassesError.captureFailed("capturePhoto returned false."))
+                            finish(.failure(GlassesError.captureFailed("capturePhoto returned false.")))
                         }
                     }
                 } else if state == .stopped {
-                    box.fail(GlassesError.captureFailed("Stream stopped before a photo arrived."))
+                    finish(.failure(GlassesError.captureFailed("Stream stopped before a photo arrived.")))
                 }
             }.store(in: tokens)
 
             stream.errorPublisher.listen { error in
-                box.fail(GlassesError.captureFailed(error.localizedDescription))
+                finish(.failure(GlassesError.captureFailed(error.localizedDescription)))
             }.store(in: tokens)
 
             stream.photoDataPublisher.listen { photo in
-                box.succeed(photo.data)
+                finish(.success(photo.data))
             }.store(in: tokens)
 
             stream.start()
@@ -217,7 +234,7 @@ final class GlassesCameraService: PhotoCapturing {
             timeoutTask = Task { @MainActor in
                 try? await Task.sleep(for: self.timeout)
                 guard !Task.isCancelled else { return }
-                box.fail(GlassesError.timedOut("a photo from the glasses"))
+                finish(.failure(GlassesError.timedOut("a photo from the glasses")))
             }
         }
     }

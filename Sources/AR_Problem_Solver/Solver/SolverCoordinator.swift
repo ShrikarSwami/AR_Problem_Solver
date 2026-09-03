@@ -25,12 +25,16 @@ final class SolverCoordinator {
     /// Whether a registered device is available. Injected so the coordinator can
     /// fail fast without reaching into `WearablesService`.
     private let isDeviceReady: @MainActor () -> Bool
-    /// Pause between camera-session teardown and opening the display session, so
-    /// the Bluetooth link has a moment to settle. Overridable for tests.
+    /// Pause between closing one DAT session and opening the next, so the
+    /// Bluetooth link settles. Overridable for tests.
     var handoffDelay: Duration = .milliseconds(600)
     /// How long the "all steps done" card stays up before the display session
     /// closes. Overridable for tests.
     var completionLinger: Duration = .seconds(2)
+
+    /// Fired after the coordinator returns to `.idle` (finish or reset), so the
+    /// app can re-send the glasses home screen.
+    var onIdle: (@MainActor () async -> Void)?
 
     init(
         camera: PhotoCapturing,
@@ -54,13 +58,16 @@ final class SolverCoordinator {
         teleprompter = nil
 
         do {
+            // DAT allows one DeviceSession per device, so release the home-screen
+            // display session before the camera opens its own.
+            display.end()
+            try? await Task.sleep(for: handoffDelay)
+
             state = .capturing
             let jpeg = try await camera.capturePhoto()
             AppLog.solver.info("Captured \(jpeg.count) byte photo")
 
             state = .thinking
-            // Camera session has fully torn down inside capturePhoto(); let the
-            // link settle before the display session opens.
             try? await Task.sleep(for: handoffDelay)
             try? await display.send(TeleprompterDisplay.thinking(problem: "Reading the problem…"))
 
@@ -89,18 +96,22 @@ final class SolverCoordinator {
     }
 
     /// Called when the wearer taps "Done" on the last step: reset state now, show
-    /// a brief confirmation card, then close the display session.
+    /// a brief confirmation card, then hand back to the home screen.
     func finish() async {
         teleprompter = nil
         state = .idle
         try? await display.send(TeleprompterDisplay.completed())
         try? await Task.sleep(for: completionLinger)
         display.end()
+        try? await Task.sleep(for: handoffDelay)
+        await onIdle?()
     }
 
-    func reset() {
+    func reset() async {
         display.end()
         teleprompter = nil
         state = .idle
+        try? await Task.sleep(for: handoffDelay)
+        await onIdle?()
     }
 }

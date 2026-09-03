@@ -77,24 +77,32 @@ struct RootView: View {
     @ViewBuilder
     private var solveButton: some View {
         let state = model.coordinator.state
-        Button {
-            Task { await model.coordinator.solve() }
-        } label: {
-            HStack {
-                if state.isBusy { ProgressView().tint(.white) }
-                Text(buttonTitle(for: state))
-                    .fontWeight(.semibold)
+        VStack(spacing: 6) {
+            Button {
+                Task { await model.coordinator.solve() }
+            } label: {
+                HStack {
+                    if state.isBusy { ProgressView().tint(.white) }
+                    Text(buttonTitle(for: state))
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
             }
-            .frame(maxWidth: .infinity)
-            .padding()
+            .buttonStyle(.borderedProminent)
+            .disabled(state.isBusy || !model.wearables.isAuthorized)
+
+            if model.isGlassesReady, state == .idle {
+                Text("Or tap Scan on the glasses.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .buttonStyle(.borderedProminent)
-        .disabled(state.isBusy || !model.wearables.isAuthorized)
     }
 
     private func buttonTitle(for state: SolverCoordinator.State) -> String {
         switch state {
-        case .idle, .failed: return "Capture & Solve"
+        case .idle, .failed: return "Scan a problem"
         case .capturing: return "Capturing photo…"
         case .thinking: return "Asking Claude…"
         case .presenting: return "On the glasses"
@@ -107,7 +115,7 @@ struct RootView: View {
             Text("\(solution.steps.count) steps — navigate with the wristband")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button("End session") { model.coordinator.reset() }
+            Button("End session") { Task { await model.coordinator.reset() } }
                 .font(.callout)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

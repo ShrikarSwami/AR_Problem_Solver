@@ -7,6 +7,26 @@ import MWDATDisplay
 /// advanced with the Neural Wristband via the `Back` / `Next` buttons.
 enum TeleprompterDisplay {
 
+    /// The glasses-side home screen. Sent on launch (and after each solve) so the
+    /// wearer can start a scan from the display with a wristband tap — no need to
+    /// touch the phone.
+    static func home(onScan: @escaping @Sendable () -> Void) -> FlexBox {
+        FlexBox(direction: .column, spacing: 12) {
+            FlexBox(direction: .column, spacing: 4) {
+                Text("AR Problem Solver", style: .heading)
+                Text("Look at a problem, then tap Scan.", style: .body, color: .secondary)
+            }
+            .padding(24)
+            .background(.card)
+
+            FlexBox(direction: .row, alignment: .center, crossAlignment: .center) {
+                ButtonGroup {
+                    Button(label: "Scan", style: .primary, iconName: .fourCornerFrame, onClick: onScan)
+                }
+            }
+        }
+    }
+
     /// A single solution step.
     static func page(
         problem: String,
