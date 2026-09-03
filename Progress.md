@@ -160,6 +160,24 @@ xcodebuild -scheme AR_Problem_Solver -destination 'generic/platform=iOS Simulato
   closes (`completionLinger`).
 - 10/10 unit tests pass; simulator build green.
 
+## 7c. Launch-crash fix (2026-09-03)
+
+Symptom: app crashed at launch in Xcode with `SIGTRAP` inside
+`mach_o::Header::forEachLoadCommand`, preceded by dozens of
+`objc[...] Class SUPMediaStream… / FB… is implemented in both
+MWDATMockDevice.framework and MWDATCamera.framework … mysterious crashes`.
+
+Cause: the app target linked **both** `MWDATCamera` and `MWDATMockDevice`, which
+each statically embed the same Objective-C support classes. Two copies in one
+binary is undefined behaviour in the objc runtime / dyld image registration.
+
+Fix: `MWDATMockDevice` removed from both the app and test targets in
+`project.yml` (nothing imported it yet). After the change: no duplicate-class
+warnings, app launches and stays running on the iPhone 17 Pro simulator, 10/10
+tests still pass. When MockDeviceKit tests are added, link
+`MWDATMockDeviceTestClient` (the test-safe product) on a dedicated test target
+only.
+
 ## 8. Next steps
 
 - [ ] Add a DEBUG-only MockDeviceKit toggle in Settings to exercise the camera

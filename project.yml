@@ -32,8 +32,11 @@ targets:
         product: MWDATCamera
       - package: MetaWearablesDAT
         product: MWDATDisplay
-      - package: MetaWearablesDAT
-        product: MWDATMockDevice
+      # NOTE: MWDATMockDevice is intentionally NOT linked into the app. It ships
+      # the same SUPMediaStream*/FB* ObjC classes as MWDATCamera; loading both in
+      # one binary triggers "duplicate class" warnings and a dyld/objc crash at
+      # launch. Re-introduce only in a dedicated test target, ideally via the
+      # MWDATMockDeviceTestClient product.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shrikar.AR-Problem-Solver
@@ -57,8 +60,8 @@ targets:
       - path: Tests/AR_Problem_SolverTests
     dependencies:
       - target: AR_Problem_Solver
-      - package: MetaWearablesDAT
-        product: MWDATMockDevice
+      # MWDATMockDeviceTestClient (not MWDATMockDevice) is the test-safe product —
+      # add it here when MockDeviceKit-backed tests are written.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.shrikar.AR-Problem-SolverTests
