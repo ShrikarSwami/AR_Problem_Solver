@@ -83,14 +83,51 @@ enum TeleprompterDisplay {
         .background(.card)
     }
 
-    /// Shown briefly after the wearer taps "Done" on the last step.
-    static func completed() -> FlexBox {
-        FlexBox(direction: .column, spacing: 8) {
-            Text("All steps done", style: .heading)
-            Text("Take off the glasses or capture another problem.", style: .body, color: .secondary)
+    /// Guards the one real exit action in the flow: tapping "Done" on the last
+    /// step. Requires an explicit second tap so a stray wristband gesture can't
+    /// drop the wearer out of Problem Solver Mode mid-review.
+    static func exitConfirm(
+        onContinue: @escaping @Sendable () -> Void,
+        onExit: @escaping @Sendable () -> Void
+    ) -> FlexBox {
+        FlexBox(direction: .column, spacing: 12) {
+            FlexBox(direction: .column, spacing: 4) {
+                Text("Exit Problem Solver?", style: .heading)
+                Text("Continue to keep viewing this step.", style: .body, color: .secondary)
+            }
+            .padding(24)
+            .background(.card)
+
+            FlexBox(direction: .row, alignment: .center, crossAlignment: .center) {
+                ButtonGroup {
+                    Button(label: "Continue", style: .primary, iconName: .checkmark, onClick: onContinue)
+                    Button(label: "Exit", style: .secondary, iconName: .x, onClick: onExit)
+                }
+            }
         }
-        .padding(24)
-        .background(.card)
+    }
+
+    /// Shown after an exit is confirmed. Problem Solver Mode stays live until the
+    /// wearer explicitly picks one — no auto-dismiss back to the home screen.
+    static func completed(
+        onScanNext: @escaping @Sendable () -> Void,
+        onExit: @escaping @Sendable () -> Void
+    ) -> FlexBox {
+        FlexBox(direction: .column, spacing: 12) {
+            FlexBox(direction: .column, spacing: 4) {
+                Text("All steps done", style: .heading)
+                Text("Scan another problem, or exit to the home screen.", style: .body, color: .secondary)
+            }
+            .padding(24)
+            .background(.card)
+
+            FlexBox(direction: .row, alignment: .center, crossAlignment: .center) {
+                ButtonGroup {
+                    Button(label: "Scan Next", style: .primary, iconName: .fourCornerFrame, onClick: onScanNext)
+                    Button(label: "Exit", style: .secondary, iconName: .x, onClick: onExit)
+                }
+            }
+        }
     }
 
     /// Terminal error page.

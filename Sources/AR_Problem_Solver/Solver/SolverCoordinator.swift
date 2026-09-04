@@ -28,12 +28,11 @@ final class SolverCoordinator {
     /// Pause between closing one DAT session and opening the next, so the
     /// Bluetooth link settles. Overridable for tests.
     var handoffDelay: Duration = .milliseconds(600)
-    /// How long the "all steps done" card stays up before the display session
-    /// closes. Overridable for tests.
-    var completionLinger: Duration = .seconds(2)
 
-    /// Fired after the coordinator returns to `.idle` (finish or reset), so the
-    /// app can re-send the glasses home screen.
+    /// Fired only after the wearer explicitly exits Problem Solver Mode (finish's
+    /// "Exit" choice, or the phone's "End session"), so the app can re-send the
+    /// glasses home screen. NOT fired between solves — `finish()` waits on the
+    /// glasses for "Scan Next" vs "Exit" rather than auto-returning to idle.
     var onIdle: (@MainActor () async -> Void)?
 
     init(
@@ -95,23 +94,41 @@ final class SolverCoordinator {
         }
     }
 
-    /// Called when the wearer taps "Done" on the last step: reset state now, show
-    /// a brief confirmation card, then hand back to the home screen.
+    /// Called once the wearer confirms "Exit" on the last step. Problem Solver
+    /// Mode stays live — the glasses show a completion card with "Scan Next"
+    /// (loops straight back into `solve()`) and "Exit" (the only path back to
+    /// the home screen). Nothing auto-dismisses.
     func finish() async {
         teleprompter = nil
         state = .idle
-        try? await display.send(TeleprompterDisplay.completed())
-        try? await Task.sleep(for: completionLinger)
+        try? await display.send(
+            TeleprompterDisplay.completed(
+                onScanNext: { [weak self] in Task { @MainActor in await self?.scanNext() } },
+                onExit: { [weak self] in Task { @MainActor in await self?.exitToHome() } }
+            )
+        )
+    }
+
+    /// What the completion card's "Scan Next" button does: loop straight back
+    /// into another solve without leaving Problem Solver Mode.
+    func scanNext() async {
+        await solve()
+    }
+
+    /// What the completion card's "Exit" button does (also used by the phone's
+    /// "End session"): closes the display session and hands back to the app's
+    /// idle/home screen.
+    func exitToHome() async {
         display.end()
         try? await Task.sleep(for: handoffDelay)
         await onIdle?()
     }
 
+    /// Hard exit from the phone (the "End session" button) — leaves Problem
+    /// Solver Mode regardless of what the glasses are currently showing.
     func reset() async {
-        display.end()
         teleprompter = nil
         state = .idle
-        try? await Task.sleep(for: handoffDelay)
-        await onIdle?()
+        await exitToHome()
     }
 }

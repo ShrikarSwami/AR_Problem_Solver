@@ -12,7 +12,6 @@ final class SolverCoordinatorTests: XCTestCase {
     ) -> SolverCoordinator {
         let coordinator = SolverCoordinator(camera: camera, solver: solver, display: display)
         coordinator.handoffDelay = .zero
-        coordinator.completionLinger = .zero
         return coordinator
     }
 
@@ -77,14 +76,51 @@ final class SolverCoordinatorTests: XCTestCase {
         await teleprompter.next()
         XCTAssertEqual(teleprompter.index, 1)
 
+        // "Done" on the last step shows an exit-confirm, not an immediate finish.
+        let endCountBeforeConfirm = display.endCount
+        await teleprompter.next()
+        XCTAssertNotNil(coordinator.teleprompter, "still in Problem Solver Mode pending the confirm")
+        XCTAssertEqual(display.endCount, endCountBeforeConfirm)
+
+        // "Continue" on the confirm backs out — still in the flow.
+        await teleprompter.cancelExit()
+        XCTAssertNotNil(coordinator.teleprompter)
+        XCTAssertEqual(display.endCount, endCountBeforeConfirm)
+
+        // Confirming exit reaches finish()'s completion card — still no auto-close.
+        await teleprompter.next()
+        await teleprompter.confirmExit()
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertNil(coordinator.teleprompter)
+        XCTAssertEqual(display.endCount, endCountBeforeConfirm, "completion card waits for Scan Next / Exit, no auto-dismiss")
+
         var idleFired = false
         coordinator.onIdle = { idleFired = true }
 
-        await teleprompter.next() // past the end -> finish()
-        XCTAssertEqual(coordinator.state, .idle)
-        XCTAssertNil(coordinator.teleprompter)
-        XCTAssertTrue(display.ended)
+        // "Exit" on the completion card is what actually leaves Problem Solver Mode.
+        await coordinator.exitToHome()
+        XCTAssertEqual(display.endCount, endCountBeforeConfirm + 1)
         XCTAssertTrue(idleFired, "onIdle should fire so the app can re-send the glasses home screen")
+    }
+
+    func testScanNextLoopsWithoutReturningToIdle() async {
+        let camera = FakeCamera(result: .success(Data([0x1])))
+        let solver = FakeSolver(result: .success("PROBLEM: T.\nSTEP 1: only.\nDONE"))
+        let display = FakeDisplay()
+        let coordinator = makeCoordinator(camera: camera, solver: solver, display: display)
+        await coordinator.solve()
+
+        let first = try! XCTUnwrap(coordinator.teleprompter)
+        await first.next()          // single-step solution -> straight to exit confirm
+        await first.confirmExit()   // -> finish()'s completion card
+        XCTAssertNil(coordinator.teleprompter)
+
+        var idleFired = false
+        coordinator.onIdle = { idleFired = true }
+
+        await coordinator.scanNext() // "Scan Next" tapped on the completion card
+        XCTAssertNotNil(coordinator.teleprompter, "should be presenting again")
+        XCTAssertFalse(idleFired, "Scan Next must stay in Problem Solver Mode")
     }
 }
 
@@ -105,8 +141,12 @@ private struct FakeSolver: ProblemSolving {
 @MainActor
 private final class FakeDisplay: DisplaySending {
     private(set) var sentPages: [FlexBox] = []
-    private(set) var ended = false
+    /// How many times `end()` has been called. `solve()` calls it once up front
+    /// (to free the session for the camera) before any teleprompter work, so
+    /// tests should compare deltas rather than assume a single boolean flip.
+    private(set) var endCount = 0
+    var ended: Bool { endCount > 0 }
     var isConnected: Bool { true }
     func send(_ page: FlexBox) async throws { sentPages.append(page) }
-    func end() { ended = true }
+    func end() { endCount += 1 }
 }
